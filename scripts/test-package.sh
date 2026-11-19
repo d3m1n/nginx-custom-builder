@@ -10,6 +10,10 @@ set -uo pipefail
 
 DEB="${DEB:?DEB must point to the built .deb}"
 EXPECTED_VERSION="${NGINX_VERSION:?NGINX_VERSION must be set}"
+# build number from env, or parsed from the artifact filename as the source of truth
+DEB_BASENAME="$(basename "$DEB")"
+EXPECTED_NCB="${NCB_BUILD:-$(printf '%s' "$DEB_BASENAME" | sed -n 's/.*-1ncb\([0-9]*\)~.*/\1/p')}"
+EXPECTED_NCB="${EXPECTED_NCB:-1}"
 
 PASS=0
 FAIL=0
@@ -33,10 +37,10 @@ else
 fi
 
 deb_ver="$(dpkg-query -W -f='${Version}' nginx 2>/dev/null)"
-if [ "$deb_ver" = "$EXPECTED_VERSION-1ncb1~$TARGET_CODENAME" ]; then
+if [ "$deb_ver" = "$EXPECTED_VERSION-1ncb$EXPECTED_NCB~$TARGET_CODENAME" ]; then
     ok "package version is $deb_ver"
 else
-    bad "package version: got '$deb_ver', expected '$EXPECTED_VERSION-1ncb1~$TARGET_CODENAME'"
+    bad "package version: got '$deb_ver', expected '$EXPECTED_VERSION-1ncb$EXPECTED_NCB~$TARGET_CODENAME'"
 fi
 
 # --- binary and build parity -------------------------------------------------
@@ -85,7 +89,7 @@ fi
 # systemd-analyze verify requires a recent systemd for offline verification;
 # older systemd (e.g. 237 on bionic) tries to init the manager and fails in
 # containers. Fall back to structural unit checks there.
-SD_VER="$(systemd --version 2>/dev/null | head -1 | awk '{print $NF}')"
+SD_VER="$(systemd --version 2>/dev/null | head -1 | grep -oE '[0-9]+' | head -1)"
 if [ -n "$SD_VER" ] && [ "$SD_VER" -ge 245 ] 2>/dev/null; then
     if systemd-analyze verify nginx.service 2>/dev/null; then
         ok "systemd unit nginx.service validates (systemd-analyze, systemd $SD_VER)"
