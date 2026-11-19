@@ -106,5 +106,10 @@ $MODULES_JSON
 EOF
 
 echo "==> manifest written: $OUT"
-sha256sum "$DEB" "$OUT" > "$WORK/out/SHA256SUMS"
+
+# SHA256SUMS uses RELATIVE filenames so `sha256sum -c` works from any checkout
+# directory (the release job extracts the artifact into ./out/ and verifies
+# there). Absolute paths (e.g. /work/out/nginx_...deb) would not resolve on the
+# GitHub runner and break the pre-publish checksum gate.
+( cd "$WORK/out" && sha256sum nginx_*.deb manifest.json > SHA256SUMS )
 cat "$WORK/out/SHA256SUMS"
