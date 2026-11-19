@@ -196,7 +196,7 @@ jobs:
             -v "$PWD/out:/work:ro" \
             -v "$PWD:/repo:ro" \
             -e DEB="/work/${DEB_BASE}" \
-            -e NGINX_VERSION \
+            -e NGINX_VERSION="$NGINX_VERSION" \
             -e TARGET_CODENAME="$TARGET" \
             "nginx-custom-builder:build-${TARGET}" \
             bash /repo/scripts/test-package.sh
