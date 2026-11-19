@@ -1,6 +1,6 @@
 # Development Plan
 
-Status: **Phase 0–5 complete (2026-11-19) — all targets built and validated. Remaining: Phase 6 (GitHub Actions) + Phase 7 (docs)**
+Status: **COMPLETE (2026-11-19) — Phases 0-7 done, all targets validated locally, pipeline validated end-to-end on GitHub Actions (run 44530501808: success)**
 
 ## Phase 0 — Repository and upstream audit — DONE (2026-11-19)
 - [x] Inspect the repository and identify existing content. (Only docs/spec files present; no implementation code.)
@@ -100,7 +100,7 @@ Per-target artifacts (all nginx 1.30.7, brotli compiled in, stripped):
 - `nginx_1.30.7-1ncb2~jammy_amd64.deb` — sha256 75c5a5bc… (jammy + headers-more, 5/5)
 
 
-## Phase 6 — GitHub Actions and Releases — DONE (2026-11-19, validated by actionlint; first real run requires repository publication)
+## Phase 6 — GitHub Actions and Releases — DONE (2026-11-19, **validated by a real end-to-end run**)
 - [x] Add manual `workflow_dispatch`. (.github/workflows/build.yml; no push/PR triggers.)
 - [x] Inputs: target Ubuntu, NGINX version/channel, module selection/custom modules, release publishing choice. (All inputs enum/regex-validated via env vars — no shell injection surface.)
 - [x] Use least-privilege workflow permissions. (Top-level contents:read; release job alone gets contents:write behind the `release` environment; all three actions pinned by commit SHA.)
@@ -109,7 +109,10 @@ Per-target artifacts (all nginx 1.30.7, brotli compiled in, stripped):
 - [x] Create release assets only after all required tests pass. (release job needs: test.)
 - [x] Publish `.deb`, SHA256 checksums, build metadata, and module manifest. (.deb + .changes + .buildinfo + manifest.json + SHA256SUMS + build-env snapshot; checksum verified pre-publish.)
 - [x] Prevent accidental overwrite or confusing release tag collisions. (Tag `nginx-<VERSION>-<CODENAME>`; explicit pre-check refuses an existing release with guidance to increment ncb_build.)
-Exit criteria: workflow validated with actionlint v1.7.7 (PASS). NOTE: a real end-to-end workflow run can only happen after the repository is pushed to GitHub — explicitly deferred to repository publication.
+Exit criteria met with evidence — real run https://github.com/d3m1n/nginx-custom-builder/actions/runs/44530501808 (jammy/stable/ncb4, publish=false):
+- build → success (2.6 min), test → success (2.9 min), release → skipped (as designed).
+- Package suite **26/26**, nginx-org migration **13/13**, distro take-over **8/8**, postinst guard **5/5** — all on the GitHub-hosted runner.
+- Artifact `nginx-deb-jammy-ncb4` (1.18 MB) uploaded with .deb/.changes/.buildinfo/manifest.json/SHA256SUMS/build-env snapshot.
 
 
 ## Phase 7 — Documentation and final review — DONE (2026-11-19)
