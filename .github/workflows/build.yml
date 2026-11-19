@@ -237,6 +237,26 @@ jobs:
           name: nginx-deb-${{ inputs.target_codename }}-ncb${{ inputs.ncb_build }}
           path: out
 
+      - name: Normalize asset names and checksums
+        run: |
+          set -euo pipefail
+          # GitHub replaces '~' with '.' in release asset filenames, which would
+          # break sha256sum -c against the tilde-named entries in SHA256SUMS.
+          # Rename files to dash-based names, update the manifest reference,
+          # and regenerate checksums so everything users download is consistent.
+          # (The dpkg version INSIDE the package keeps '~' — required for
+          # pre-release ordering; only asset filenames change.)
+          cd out
+          shopt -s nullglob
+          for f in *~*; do
+            new="${f//\~/-}"
+            echo "renaming: $f -> $new"
+            mv "$f" "$new"
+          done
+          sed -i '/"file":/s/~/-/' manifest.json
+          sha256sum nginx_*.deb manifest.json > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Verify checksums before publishing
         run: |
           set -euo pipefail
