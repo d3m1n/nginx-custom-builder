@@ -259,10 +259,14 @@ jobs:
           MODULES: ${{ inputs.selected_modules }}
         run: |
           set -euo pipefail
-          TAG="nginx-${NGINX_VERSION}-${TARGET}"
+          # short commit hash makes every build's tag unique — no conflicts
+          # between rebuilds of the same version, provenance visible in the name
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          TAG="nginx-${NGINX_VERSION}-${TARGET}-${SHORT_SHA}"
+          echo "release tag: $TAG (commit ${GITHUB_SHA})"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::error::release/tag '$TAG' already exists — refusing to overwrite."
-            echo "::error::increment ncb_build and rebuild for another build of the same version."
+            echo "::error::a release for this commit and target already exists; check Actions history."
             exit 1
           fi
           DEB_NAME="$(basename "$(ls out/nginx_*.deb)")"
@@ -270,6 +274,7 @@ jobs:
           NGINX ${NGINX_VERSION} for Ubuntu ${TARGET} (amd64)
 
           - Channel: ${MODE}${EXACT:+ (exact: ${EXACT})}
+          - Build: commit ${SHORT_SHA} of nginx-custom-builder
           - Brotli (filter + static) compiled in
           ${MODULES:+- Optional modules: ${MODULES}}
           - Packaging based on nginx/pkg-oss (BSD-2-Clause); full provenance in manifest.json
