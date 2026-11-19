@@ -1,0 +1,298 @@
+# Manual NGINX .deb build workflow.
+#
+# Safety model (see docs/ARCHITECTURE.md D6):
+# - workflow_dispatch only: no push/PR triggers, nothing runs without intent.
+# - Release publication happens ONLY when the operator explicitly sets the
+#   publish input AND all build+test jobs pass.
+# - All user inputs are passed via environment variables and validated with
+#   strict allow-lists before use (no ${{ }} interpolation inside run blocks
+#   beyond env declarations — prevents shell injection).
+# - Least privilege: contents:read everywhere; the release job alone gets
+#   contents:write (plus the "release" environment for optional protection).
+# - Compilation and tests run inside disposable target containers.
+# - All actions are pinned by commit SHA.
+
+name: Build NGINX deb
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_codename:
+        description: "Target Ubuntu release"
+        required: true
+        default: "jammy"
+        type: choice
+        options:
+          - jammy
+          - noble
+          - focal
+          - bionic
+      nginx_version_mode:
+        description: "NGINX version selection"
+        required: true
+        default: "stable"
+        type: choice
+        options:
+          - stable
+          - mainline
+          - exact
+      nginx_exact_version:
+        description: "Exact NGINX version X.Y.Z (required when mode = exact; never substituted)"
+        required: false
+        default: ""
+        type: string
+      selected_modules:
+        description: "Optional static modules from packaging/modules-catalog.json, comma-separated (e.g. headers-more)"
+        required: false
+        default: ""
+        type: string
+      custom_modules_json:
+        description: "Ad-hoc modules JSON array [{name,url,ref,type}] (type must be static)"
+        required: false
+        default: "[]"
+        type: string
+      ncb_build:
+        description: "Build number suffix (increment when rebuilding the same version)"
+        required: false
+        default: "1"
+        type: string
+      publish_release:
+        description: "Create a GitHub Release after all tests pass?"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Validate and resolve inputs
+        env:
+          TARGET: ${{ inputs.target_codename }}
+          MODE: ${{ inputs.nginx_version_mode }}
+          EXACT: ${{ inputs.nginx_exact_version }}
+          NCB: ${{ inputs.ncb_build }}
+          MODULES: ${{ inputs.selected_modules }}
+          CUSTOM_JSON: ${{ inputs.custom_modules_json }}
+        run: |
+          set -euo pipefail
+
+          # strict allow-lists — fail before anything else runs
+          case "$TARGET" in
+            jammy|noble|focal|bionic) ;;
+            *) echo "::error::invalid target_codename '$TARGET'"; exit 2 ;;
+          esac
+          case "$MODE" in
+            stable|mainline) ;;
+            exact)
+              if ! printf '%s' "$EXACT" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                echo "::error::nginx_exact_version must be X.Y.Z when mode=exact (got '$EXACT')"
+                exit 2
+              fi
+              ;;
+            *) echo "::error::invalid nginx_version_mode '$MODE'"; exit 2 ;;
+          esac
+          printf '%s' "$NCB" | grep -Eq '^[0-9]+$' \
+            || { echo "::error::ncb_build must be numeric"; exit 2; }
+          printf '%s' "$CUSTOM_JSON" | python3 -m json.tool >/dev/null 2>&1 \
+            || { echo "::error::custom_modules_json is not valid JSON"; exit 2; }
+
+          # module selection validation (fail BEFORE any build starts)
+          bash scripts/select-modules.sh \
+            packaging/modules-catalog.json \
+            "$MODULES" \
+            "$CUSTOM_JSON" > /tmp/modules-selected.env
+
+          if [ "$MODE" = exact ]; then
+            bash scripts/resolve-version.sh exact "$EXACT" > build-env.txt
+          else
+            bash scripts/resolve-version.sh "$MODE" > build-env.txt
+          fi
+          {
+            echo "TARGET_CODENAME=$TARGET"
+            echo "NCB_BUILD=$NCB"
+            echo "SELECTED_MODULES=$MODULES"
+            echo "CUSTOM_MODULES_JSON=$CUSTOM_JSON"
+          } >> build-env.txt
+          cat build-env.txt
+
+          # expose to later steps of THIS job (jobs do not share env)
+          grep -E '^(NGINX_VERSION|TARGET_CODENAME)=' build-env.txt >> "$GITHUB_ENV"
+
+      - name: Build in target container
+        env:
+          TARGET: ${{ inputs.target_codename }}
+          NCB: ${{ inputs.ncb_build }}
+          MODULES: ${{ inputs.selected_modules }}
+          CUSTOM_JSON: ${{ inputs.custom_modules_json }}
+        run: |
+          set -euo pipefail
+          docker build -f "containers/Dockerfile.${TARGET}" \
+            -t "nginx-custom-builder:build-${TARGET}" .
+          mkdir -p workdir
+          cp build-env.txt workdir/env.sh
+          docker run --rm \
+            -v "$PWD/workdir:/work" \
+            -v "$PWD:/repo:ro" \
+            -e WORKDIR=/work \
+            -e TARGET_CODENAME="$TARGET" \
+            -e NCB_BUILD="$NCB" \
+            -e SELECTED_MODULES="$MODULES" \
+            -e CUSTOM_MODULES_JSON="$CUSTOM_JSON" \
+            -e VENDOR="NGINX Custom Builder <nginx-custom-builder@users.noreply.github.com>" \
+            "nginx-custom-builder:build-${TARGET}" \
+            bash /repo/scripts/build-in-container.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nginx-deb-${{ inputs.target_codename }}-ncb${{ inputs.ncb_build }}
+          path: |
+            workdir/out/*.deb
+            workdir/out/*.changes
+            workdir/out/*.buildinfo
+            workdir/out/manifest.json
+            workdir/out/SHA256SUMS
+            workdir/out/build-env-packages.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  test:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nginx-deb-${{ inputs.target_codename }}-ncb${{ inputs.ncb_build }}
+          path: out
+
+      - name: Run package test suite in a fresh target container
+        env:
+          TARGET: ${{ inputs.target_codename }}
+        run: |
+          set -euo pipefail
+          docker build -f "containers/Dockerfile.${TARGET}" \
+            -t "nginx-custom-builder:build-${TARGET}" .
+          DEB_BASE="$(basename "$(ls out/nginx_*.deb)")"
+          NGINX_VERSION="$(python3 -c 'import json;print(json.load(open("out/manifest.json"))["nginx_source"]["version"])')"
+          docker run --rm \
+            -v "$PWD/out:/work:ro" \
+            -v "$PWD:/repo:ro" \
+            -e DEB="/work/${DEB_BASE}" \
+            -e NGINX_VERSION \
+            -e TARGET_CODENAME="$TARGET" \
+            "nginx-custom-builder:build-${TARGET}" \
+            bash /repo/scripts/test-package.sh
+
+      - name: Run migration suites (nginx.org upgrade, distro take-over, postinst guard)
+        if: ${{ inputs.target_codename == 'jammy' }}
+        env:
+          TARGET: ${{ inputs.target_codename }}
+        run: |
+          set -euo pipefail
+          DEB_BASE="$(basename "$(ls out/nginx_*.deb)")"
+          for scenario in nginx-org ubuntu-distro guard; do
+            echo "=== migration scenario: $scenario ==="
+            docker run --rm \
+              -v "$PWD/out:/work:ro" \
+              -v "$PWD:/repo:ro" \
+              -e DEB="/work/${DEB_BASE}" \
+              -e TARGET_CODENAME="$TARGET" \
+              "nginx-custom-builder:build-${TARGET}" \
+              bash /repo/scripts/test-package-migration.sh "$scenario"
+          done
+
+  release:
+    needs: test
+    if: ${{ inputs.publish_release }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    environment: release
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nginx-deb-${{ inputs.target_codename }}-ncb${{ inputs.ncb_build }}
+          path: out
+
+      - name: Verify checksums before publishing
+        run: |
+          set -euo pipefail
+          cd out
+          grep -F '.deb' SHA256SUMS | sha256sum -c --strict
+          python3 -m json.tool manifest.json >/dev/null
+
+      - name: Read resolved version from the manifest
+        run: |
+          set -euo pipefail
+          echo "NGINX_VERSION=$(python3 -c 'import json;print(json.load(open("out/manifest.json"))["nginx_source"]["version"])')" \
+            >> "$GITHUB_ENV"
+
+      - name: Create release (refuses to overwrite an existing release/tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.target_codename }}
+          MODE: ${{ inputs.nginx_version_mode }}
+          EXACT: ${{ inputs.nginx_exact_version }}
+          MODULES: ${{ inputs.selected_modules }}
+        run: |
+          set -euo pipefail
+          TAG="nginx-${NGINX_VERSION}-${TARGET}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::release/tag '$TAG' already exists — refusing to overwrite."
+            echo "::error::increment ncb_build and rebuild for another build of the same version."
+            exit 1
+          fi
+          DEB_NAME="$(basename "$(ls out/nginx_*.deb)")"
+          NOTES="$(cat <<NOTES_EOF
+          NGINX ${NGINX_VERSION} for Ubuntu ${TARGET} (amd64)
+
+          - Channel: ${MODE}${EXACT:+ (exact: ${EXACT})}
+          - Brotli (filter + static) compiled in
+          ${MODULES:+- Optional modules: ${MODULES}}
+          - Packaging based on nginx/pkg-oss (BSD-2-Clause); full provenance in manifest.json
+
+          ## Install
+          \`\`\`
+          sha256sum -c SHA256SUMS
+          sudo apt install ./${DEB_NAME}
+          \`\`\`
+
+          ## Verify
+          \`\`\`
+          nginx -v && nginx -V   # check version and configure args
+          \`\`\`
+
+          Upgrade over an official nginx.org package is supported (plain \`apt install ./deb\` or \`apt upgrade\`).
+          Ordinary removal preserves /etc/nginx, logs, and certificates.
+          WARNING: \`apt purge\` deletes /etc/nginx entirely (nginx.org parity) — back up certs/configs first.
+          Rollback: \`sudo apt install --allow-downgrades nginx=<nginx.org-version>\`.
+          NOTES_EOF
+          )"
+          gh release create "$TAG" \
+            out/nginx_*.deb \
+            out/SHA256SUMS \
+            out/manifest.json \
+            --title "$TAG" \
+            --notes "$NOTES"
