@@ -1,0 +1,33 @@
+# Build container for Ubuntu 18.04 bionic (amd64) — nginx-custom-builder
+# BEST-EFFORT legacy target (standard support ended 2023-05; distro OpenSSL
+# is 1.1.1, upstream EOL — documented limitation, see docs/ARCHITECTURE.md).
+# Base image pinned by digest; apt sources fall back to old-releases.ubuntu.com
+# when archive.ubuntu.com no longer serves bionic.
+FROM ubuntu@sha256:152dc042452c496007f07ca9127571cb9c29697f42acbfad72324b2bb2e43c98
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    || (sed -i -E \
+            -e 's|//([a-z]{2,3}\.)?archive\.ubuntu\.com|//old-releases.ubuntu.com|g' \
+            -e 's|//security\.ubuntu\.com|//old-releases.ubuntu.com|g' \
+            /etc/apt/sources.list \
+        && apt-get update) \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        debhelper \
+        devscripts \
+        equivs \
+        git \
+        gnupg \
+        libbrotli-dev \
+        libpcre2-dev \
+        libssl-dev \
+        libxml2-utils \
+        lsb-release \
+        quilt \
+        xsltproc \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*

@@ -1,0 +1,25 @@
+# Build container for Ubuntu 24.04 noble (amd64) — nginx-custom-builder
+# Base image pinned by digest (determinism; see docs/ARCHITECTURE.md D6).
+FROM ubuntu@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        debhelper \
+        devscripts \
+        equivs \
+        git \
+        gnupg \
+        libbrotli-dev \
+        libpcre2-dev \
+        libssl-dev \
+        libxml2-utils \
+        lsb-release \
+        quilt \
+        xsltproc \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*

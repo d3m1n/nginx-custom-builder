@@ -1,0 +1,32 @@
+# Build container for Ubuntu 20.04 focal (amd64) — nginx-custom-builder
+# BEST-EFFORT legacy target (standard support ended 2025-05).
+# Base image pinned by digest; apt sources fall back to old-releases.ubuntu.com
+# when archive.ubuntu.com no longer serves focal (docs/ARCHITECTURE.md D4).
+FROM ubuntu@sha256:8feb4d8ca5354def3d8fce243717141ce31e2c428701f6682bd2fafe15388214
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    || (sed -i -E \
+            -e 's|//([a-z]{2,3}\.)?archive\.ubuntu\.com|//old-releases.ubuntu.com|g' \
+            -e 's|//security\.ubuntu\.com|//old-releases.ubuntu.com|g' \
+            /etc/apt/sources.list \
+        && apt-get update) \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        debhelper \
+        devscripts \
+        equivs \
+        git \
+        gnupg \
+        libbrotli-dev \
+        libpcre2-dev \
+        libssl-dev \
+        libxml2-utils \
+        lsb-release \
+        quilt \
+        xsltproc \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*

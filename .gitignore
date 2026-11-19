@@ -1,0 +1,24 @@
+# Build workspace (disposable)
+build/
+
+# Debian packaging build byproducts
+*.deb
+*.buildinfo
+*.changes
+*.debhelper.log
+debian/.debhelper/
+debian/build-*/
+debian/nginx/
+debian/*.substvars
+debian/debhelper-build-stamp
+debian/files
+debian/nginx.postinst.debhelper
+debian/nginx.postrm.debhelper
+debian/nginx.preinst.debhelper
+debian/nginx.prerm.debhelper
+debian/nginx.debhelper.log
+debian/nginx.nginx.postinst.debhelper
+debian/nginx.nginx.postrm.debhelper
+debian/nginx.nginx.prerm.debhelper
+debian/autoreconf.after
+debian/autoreconf.before

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "description": "Optional third-party NGINX modules buildable into the single .deb. Disabled unless explicitly selected. 'ref' is resolved to an immutable commit SHA at build time and recorded in the build manifest. Entries marked 'validated' have a build+runtime test pass recorded in docs/COMPATIBILITY.md.",
+  "modules": [
+    {
+      "name": "headers-more",
+      "description": "Set, clear, and replace HTTP request/response headers (openresty/headers-more-nginx-module)",
+      "url": "https://github.com/openresty/headers-more-nginx-module",
+      "ref": "06dc0be56e5ec9f7fd814e881b066b5540a85bec",
+      "ref_note": "tag v0.37 resolved to this commit 2026-11-19 (Phase 4 validation build)",
+      "type": "static",
+      "default": false,
+      "status": "validated (jammy, nginx 1.30.7, Phase 4)"
+    },
+    {
+      "name": "fancyindex",
+      "description": "Stylized directory listings (aperezdc/ngx-fancyindex)",
+      "url": "https://github.com/aperezdc/ngx-fancyindex",
+      "ref": "v0.5.2",
+      "type": "static",
+      "default": false,
+      "status": "catalog-only — validate a build+smoke pass before production use"
+    },
+    {
+      "name": "dav-ext",
+      "description": "WebDAV PROPFIND/OPTIONS/LOCK/UNLOCK (arut/nginx-dav-ext-module)",
+      "url": "https://github.com/arut/nginx-dav-ext-module",
+      "ref": "v3.0.0",
+      "type": "static",
+      "default": false,
+      "status": "catalog-only — validate a build+smoke pass before production use"
+    }
+  ],
+  "notes": [
+    "Dynamic (.so) modules are not supported in the single-package build yet; selection fails before compile with an explicit message (see docs/ARCHITECTURE.md deferred decisions).",
+    "Modules outside this catalog can be built by passing a custom-modules JSON (name/url/ref/type) to the build pipeline; they are pinned by resolved commit and recorded in the manifest."
+  ]
+}
