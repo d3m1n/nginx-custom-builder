@@ -1,0 +1,87 @@
+# Build and publish the per-target build images to GHCR.
+#
+# These images contain ONLY the build toolchain (build-essential, debhelper,
+# libbrotli-dev, ...). NGINX sources and modules are always fetched fresh and
+# GPG-verified per package build — the image caches the toolchain, not the
+# artifacts being packaged.
+#
+# Triggers:
+# - manual dispatch (optionally for a subset of targets)
+# - automatic on changes under containers/**
+# - monthly refresh of the ACTIVE targets (jammy, noble) so their toolchain
+#   picks up distro security updates; EOL targets (focal, bionic) are only
+#   rebuilt manually — a frozen snapshot is the intended reproducibility model
+#   for those (docs/ARCHITECTURE.md D4/D6).
+#
+# Images are published to ghcr.io/d3m1n/nginx-custom-builder/build-<target>
+# with tags: main, latest, sha-<short-commit>. The consuming workflow
+# (.github/workflows/build.yml) pulls :main and falls back to a local build.
+
+name: Build images
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Comma-separated targets to build (default: all four)"
+        required: false
+        default: "jammy,noble,focal,bionic"
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "containers/**"
+      - ".github/workflows/images.yml"
+  schedule:
+    # Monthly, 1st day 03:00 UTC — refresh active-target toolchains only
+    - cron: "0 3 1 * *"
+
+permissions:
+  contents: read
+  packages: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [jammy, noble, focal, bionic]
+    if: >-
+      ${{ github.event_name == 'push'
+          || (github.event_name == 'schedule' && (matrix.target == 'jammy' || matrix.target == 'noble'))
+          || (github.event_name == 'workflow_dispatch' && contains(concat(',', inputs.targets, ','), concat(',', matrix.target, ','))) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Build and push image
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          IMG="ghcr.io/${GITHUB_REPOSITORY,,}/build-${TARGET}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          docker build \
+            -f "containers/Dockerfile.${TARGET}" \
+            -t "$IMG:main" \
+            -t "$IMG:latest" \
+            -t "$IMG:sha-${SHORT_SHA}" \
+            .
+          docker push "$IMG:main"
+          docker push "$IMG:latest"
+          docker push "$IMG:sha-${SHORT_SHA}"
+          DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$IMG:main")"
+          echo "published: $IMG (digest $DIGEST)"
+

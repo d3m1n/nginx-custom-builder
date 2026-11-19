@@ -130,16 +130,33 @@ jobs:
           # expose to later steps of THIS job (jobs do not share env)
           grep -E '^(NGINX_VERSION|TARGET_CODENAME)=' build-env.txt >> "$GITHUB_ENV"
 
+      - name: Acquire target image (pull from GHCR, fallback to local build)
+        env:
+          TARGET: ${{ inputs.target_codename }}
+        run: |
+          set -euo pipefail
+          IMG="ghcr.io/${GITHUB_REPOSITORY,,}/build-${TARGET}:main"
+          if docker pull "$IMG"; then
+            docker tag "$IMG" "nginx-custom-builder:build-${TARGET}"
+            DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "nginx-custom-builder:build-${TARGET}")"
+            echo "IMAGE_DIGEST=$DIGEST" >> "$GITHUB_ENV"
+            echo "using registry image: $DIGEST"
+          else
+            echo "::warning::GHCR image not found — building locally. Run the 'Build images' workflow to publish it."
+            docker build -f "containers/Dockerfile.${TARGET}" \
+              -t "nginx-custom-builder:build-${TARGET}" .
+            echo "IMAGE_DIGEST=local-build" >> "$GITHUB_ENV"
+          fi
+
       - name: Build in target container
         env:
           TARGET: ${{ inputs.target_codename }}
           NCB: ${{ inputs.ncb_build }}
           MODULES: ${{ inputs.selected_modules }}
           CUSTOM_JSON: ${{ inputs.custom_modules_json }}
+          IMAGE_DIGEST: ${{ env.IMAGE_DIGEST }}
         run: |
           set -euo pipefail
-          docker build -f "containers/Dockerfile.${TARGET}" \
-            -t "nginx-custom-builder:build-${TARGET}" .
           mkdir -p workdir
           cp build-env.txt workdir/env.sh
           docker run --rm \
@@ -151,6 +168,7 @@ jobs:
             -e SELECTED_MODULES="$MODULES" \
             -e CUSTOM_MODULES_JSON="$CUSTOM_JSON" \
             -e BUILDER_COMMIT="${{ github.sha }}" \
+            -e IMAGE_DIGEST \
             -e VENDOR="NGINX Custom Builder <nginx-custom-builder@users.noreply.github.com>" \
             "nginx-custom-builder:build-${TARGET}" \
             bash /repo/scripts/build-in-container.sh
@@ -188,8 +206,9 @@ jobs:
           TARGET: ${{ inputs.target_codename }}
         run: |
           set -euo pipefail
-          docker build -f "containers/Dockerfile.${TARGET}" \
-            -t "nginx-custom-builder:build-${TARGET}" .
+          IMG="ghcr.io/${GITHUB_REPOSITORY,,}/build-${TARGET}:main"
+          docker pull "$IMG" || docker build -f "containers/Dockerfile.${TARGET}" -t "$IMG" .
+          docker tag "$IMG" "nginx-custom-builder:build-${TARGET}"
           DEB_BASE="$(basename "$(ls out/nginx_*.deb)")"
           NGINX_VERSION="$(python3 -c 'import json;print(json.load(open("out/manifest.json"))["nginx_source"]["version"])')"
           docker run --rm \

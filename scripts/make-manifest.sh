@@ -40,6 +40,7 @@ DEB_SIZE="$(stat -c %s "$DEB")"
 
 CONFIGURE_ARGS="$(cat "$WORK/out/configure-args.final")"
 EXCLUDED_ARGS="$(cat "$WORK/out/configure-args.excluded")"
+IMAGE_DIGEST="${IMAGE_DIGEST:-not-recorded}"
 
 # --- build the modules JSON array (brotli + any selected custom modules) ------
 MODULES_JSON="    {
@@ -85,6 +86,7 @@ cat > "$OUT" <<EOF
     "architecture": "amd64",
     "target_codename": "$TARGET_CODENAME"
   },
+  "build_image": "$IMAGE_DIGEST",
   "nginx_source": {
     "version": "$NGINX_VERSION",
     "channel": "$NGINX_CHANNEL",
