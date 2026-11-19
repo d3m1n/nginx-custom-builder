@@ -1,21 +1,29 @@
 # Build container for Ubuntu 18.04 bionic (amd64) — nginx-custom-builder
 # BEST-EFFORT legacy target (standard support ended 2023-05; distro OpenSSL
 # is 1.1.1, upstream EOL — documented limitation, see docs/ARCHITECTURE.md).
-# Base image pinned by digest; apt sources fall back to old-releases.ubuntu.com
-# when archive.ubuntu.com no longer serves bionic.
+# Base image pinned by digest. Apt chain: azure HTTPS mirror -> old-releases
+# HTTPS (EOL insurance when bionic leaves the main archives).
+# HTTPS azure mirror + CA bootstrap: see containers/Dockerfile.jammy.
 FROM ubuntu@sha256:152dc042452c496007f07ca9127571cb9c29697f42acbfad72324b2bb2e43c98
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
-    || (sed -i -E \
-            -e 's|//([a-z]{2,3}\.)?archive\.ubuntu\.com|//old-releases.ubuntu.com|g' \
-            -e 's|//security\.ubuntu\.com|//old-releases.ubuntu.com|g' \
-            /etc/apt/sources.list \
-        && apt-get update) \
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80ncb-retries \
+    && echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/80ncb-bootstrap \
+    && sed -i -E \
+        -e 's|http://([a-z.]+\.)?archive\.ubuntu\.com|https://azure.archive.ubuntu.com|g' \
+        -e 's|http://security\.ubuntu\.com|https://azure.archive.ubuntu.com|g' \
+        /etc/apt/sources.list \
+    && (apt-get update \
+        || (sed -i -E \
+                -e 's|https://azure\.archive\.ubuntu\.com|https://old-releases.ubuntu.com|g' \
+                /etc/apt/sources.list \
+            && apt-get update)) \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm /etc/apt/apt.conf.d/80ncb-bootstrap \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
-        ca-certificates \
         curl \
         debhelper \
         devscripts \

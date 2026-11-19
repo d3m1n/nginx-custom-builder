@@ -1,13 +1,30 @@
 # Build container for Ubuntu 22.04 jammy (amd64) — nginx-custom-builder
 # Base image pinned by digest (determinism; see docs/ARCHITECTURE.md D6).
+# Apt sources use the HTTPS azure mirror: reliable from GitHub-hosted runners
+# (which run on Azure) and everywhere else; plain-HTTP archive.ubuntu.com has
+# shown connectivity flakiness (Phase 6 evidence).
+#
+# CA bootstrap: the bare ubuntu image ships no ca-certificates, so HTTPS apt
+# cannot verify peers yet. TLS peer verification is disabled ONLY for the
+# first index fetch; content integrity is still guaranteed by apt's GPG
+# signature checks on the signed Release files. ca-certificates is installed
+# immediately afterwards and verification is restored.
 FROM ubuntu@sha256:9abcaffc92a5279fff3a6a41635c0800ea33e528425fb389658806476e7defde
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80ncb-retries \
+    && echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/80ncb-bootstrap \
+    && sed -i -E \
+        -e 's|http://([a-z.]+\.)?archive\.ubuntu\.com|https://azure.archive.ubuntu.com|g' \
+        -e 's|http://security\.ubuntu\.com|https://azure.archive.ubuntu.com|g' \
+        /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm /etc/apt/apt.conf.d/80ncb-bootstrap \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
-        ca-certificates \
         curl \
         debhelper \
         devscripts \

@@ -1,13 +1,22 @@
 # Build container for Ubuntu 24.04 noble (amd64) — nginx-custom-builder
 # Base image pinned by digest (determinism; see docs/ARCHITECTURE.md D6).
+# HTTPS azure mirror + CA bootstrap: see containers/Dockerfile.jammy.
 FROM ubuntu@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update \
+RUN echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80ncb-retries \
+    && echo 'Acquire::https::Verify-Peer "false";' > /etc/apt/apt.conf.d/80ncb-bootstrap \
+    && sed -i -E \
+        -e 's|http://([a-z.]+\.)?archive\.ubuntu\.com|https://azure.archive.ubuntu.com|g' \
+        -e 's|http://security\.ubuntu\.com|https://azure.archive.ubuntu.com|g' \
+        /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm /etc/apt/apt.conf.d/80ncb-bootstrap \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
-        ca-certificates \
         curl \
         debhelper \
         devscripts \
