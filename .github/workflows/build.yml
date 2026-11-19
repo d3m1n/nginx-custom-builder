@@ -182,6 +182,12 @@ jobs:
         with:
           name: nginx-deb-${{ inputs.target_codename }}-ncb${{ inputs.ncb_build }}
           path: out
+          # build-джоба загружает 6 разных артефактов (.deb/.changes/.buildinfo/
+          # manifest.json/SHA256SUMS/build-env-packages.txt). actions/upload-artifact
+          # v4 groups files by NAME; merge-multiple:false (default) сохраняет
+          # все 6, а merge-multiple:true (default у download-artifact) перетирает
+          # дубликаты и оставляет только один .deb — SHA256SUMS пропадает.
+          merge-multiple: false
 
       - name: Run package test suite in a fresh target container
         env:
@@ -236,6 +242,12 @@ jobs:
         with:
           name: nginx-deb-${{ inputs.target_codename }}-ncb${{ inputs.ncb_build }}
           path: out
+          # build-джоба загружает 6 разных артефактов (.deb/.changes/.buildinfo/
+          # manifest.json/SHA256SUMS/build-env-packages.txt). actions/upload-artifact
+          # v4 groups files by NAME; merge-multiple:false (default) сохраняет
+          # все 6, а merge-multiple:true (default у download-artifact) перетирает
+          # дубликаты и оставляет только один .deb — SHA256SUMS пропадает.
+          merge-multiple: false
 
       - name: Verify checksums before publishing
         run: |
