@@ -45,17 +45,43 @@ defaults:
     shell: bash
 
 jobs:
+  generate-matrix:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - name: Compute target matrix
+        env:
+          EVENT: ${{ github.event_name }}
+          REQUESTED: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            schedule) LIST="jammy,noble" ;;                      # active targets only
+            workflow_dispatch) LIST="${REQUESTED:-jammy,noble,focal,bionic}" ;;
+            *) LIST="jammy,noble,focal,bionic" ;;                # push to containers/**
+          esac
+          items=""
+          IFS=',' read -ra arr <<< "$LIST"
+          for t in "${arr[@]}"; do
+            t="$(echo "$t" | xargs)"                             # trim
+            case "$t" in
+              jammy|noble|focal|bionic) ;;
+              *) echo "::error::invalid target '$t'"; exit 2 ;;
+            esac
+            items="$items{\"target\":\"$t\"},"
+          done
+          items="${items%,}"
+          echo "matrix={\"include\":[$items]}" >> "$GITHUB_OUTPUT"
+          echo "matrix: $items"
+
   build-image:
+    needs: generate-matrix
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        target: [jammy, noble, focal, bionic]
-    if: >-
-      ${{ github.event_name == 'push'
-          || (github.event_name == 'schedule' && (matrix.target == 'jammy' || matrix.target == 'noble'))
-          || (github.event_name == 'workflow_dispatch' && contains(concat(',', inputs.targets, ','), concat(',', matrix.target, ','))) }}
+      matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -84,4 +110,3 @@ jobs:
           docker push "$IMG:sha-${SHORT_SHA}"
           DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$IMG:main")"
           echo "published: $IMG (digest $DIGEST)"
-
