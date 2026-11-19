@@ -85,6 +85,9 @@ cp -a "$BUILD"/module-*.meta "$WORK/out/" 2>/dev/null || true
 # record the build environment package snapshot for provenance
 dpkg-query -W -f='${Package}\t${Version}\n' | sort > "$WORK/out/build-env-packages.txt"
 
+echo "==> stage: manifest + checksums"
+BUILDER_COMMIT="${BUILDER_COMMIT:-unknown}" \
+bash "$REPO/scripts/make-manifest.sh" "$WORK"
+
 echo "==> stage results:"
 ls -la "$WORK/out/"
-sha256sum "$WORK"/out/*.deb

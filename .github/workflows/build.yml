@@ -150,6 +150,7 @@ jobs:
             -e NCB_BUILD="$NCB" \
             -e SELECTED_MODULES="$MODULES" \
             -e CUSTOM_MODULES_JSON="$CUSTOM_JSON" \
+            -e BUILDER_COMMIT="${{ github.sha }}" \
             -e VENDOR="NGINX Custom Builder <nginx-custom-builder@users.noreply.github.com>" \
             "nginx-custom-builder:build-${TARGET}" \
             bash /repo/scripts/build-in-container.sh
