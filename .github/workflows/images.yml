@@ -51,6 +51,7 @@ jobs:
       matrix: ${{ steps.set.outputs.matrix }}
     steps:
       - name: Compute target matrix
+        id: set
         env:
           EVENT: ${{ github.event_name }}
           REQUESTED: ${{ inputs.targets }}
