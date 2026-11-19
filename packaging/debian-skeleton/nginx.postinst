@@ -43,14 +43,23 @@ if [ -x "/etc/init.d/nginx" ]; then
         echo "nginx configuration test (nginx -t) FAILED; nginx was NOT started or reloaded." >&2
         echo "Fix the configuration (see /var/log/nginx/error.log output from nginx -t)," >&2
         echo "then run: systemctl start nginx   (or: nginx, then: nginx -s reload)" >&2
-    elif [ -f "/run/nginx.pid" ] && kill -0 `cat /run/nginx.pid` >/dev/null; then
-        /etc/init.d/nginx upgrade || echo \
-            "Binary upgrade failed, please check nginx's error.log"
     else
-        if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
-            invoke-rc.d nginx start || true
+        # Warn if user's nginx.conf differs from new default (preserved by conffile mechanism)
+        if [ -f /etc/nginx/nginx.conf ] && [ -f /usr/share/nginx/nginx.conf.default ]; then
+            if ! cmp -s /etc/nginx/nginx.conf /usr/share/nginx/nginx.conf.default; then
+                echo "NOTICE: Your /etc/nginx/nginx.conf differs from the new default and was preserved." >&2
+                echo "  Review /usr/share/nginx/nginx.conf.default for new options." >&2
+            fi
+        fi
+        if [ -f "/run/nginx.pid" ] && kill -0 `cat /run/nginx.pid` >/dev/null; then
+            /etc/init.d/nginx upgrade || echo \
+                "Binary upgrade failed, please check nginx's error.log"
         else
-            /etc/init.d/nginx start || true
+            if [ -x "`which invoke-rc.d 2>/dev/null`" ]; then
+                invoke-rc.d nginx start || true
+            else
+                /etc/init.d/nginx start || true
+            fi
         fi
     fi
 fi

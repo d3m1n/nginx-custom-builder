@@ -3,6 +3,7 @@ conf/mime.types				etc/nginx
 conf/scgi_params			etc/nginx
 conf/fastcgi_params			etc/nginx
 conf/uwsgi_params			etc/nginx
+debian/nginx.conf			usr/share/nginx/nginx.conf.default
 html/index.html				usr/share/nginx/html
 html/50x.html				usr/share/nginx/html
 debian/build-nginx/objs/nginx		usr/sbin
