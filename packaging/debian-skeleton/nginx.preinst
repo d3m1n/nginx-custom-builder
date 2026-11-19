@@ -22,9 +22,21 @@ addnginxuser() {
     fi
 }
 
+# Preserve the pre-existing configuration across cross-package migration
+# (Ubuntu nginx-common/nginx-core -> this package). dpkg treats an unmodified
+# Debian-style nginx.conf as "unmodified" and silently replaces it with the
+# nginx.org-style default; backing it up here lets postinst restore it
+# (default: keep old config).
+backup_existing_conf() {
+    if [ -f /etc/nginx/nginx.conf ]; then
+        cp -a /etc/nginx/nginx.conf /etc/nginx/nginx.conf.pre-ncb
+    fi
+}
+
 case "$1" in
     install)
         addnginxuser
+        backup_existing_conf
         cat <<BANNER
 ----------------------------------------------------------------------
 
@@ -42,51 +54,11 @@ Commercial subscriptions for nginx are available on:
 
 ----------------------------------------------------------------------
 BANNER
-        # Migrate conffiles from Ubuntu nginx-common/nginx-core packages
-        # to our unified nginx package. This allows users to keep their
-        # custom configurations during migration from Ubuntu's split packages.
-        for conffile in \
-            /etc/default/nginx \
-            /etc/default/nginx-debug \
-            /etc/init.d/nginx \
-            /etc/init.d/nginx-debug \
-            /etc/logrotate.d/nginx \
-            /etc/nginx/conf.d/default.conf \
-            /etc/nginx/fastcgi_params \
-            /etc/nginx/mime.types \
-            /etc/nginx/nginx.conf \
-            /etc/nginx/scgi_params \
-            /etc/nginx/uwsgi_params; do
-            dpkg-maintscript-helper conffile_migrate \
-                "$conffile" nginx-common nginx \
-                1.30.7-1ncb1~focal -- "$@" 2>/dev/null || true
-            dpkg-maintscript-helper conffile_migrate \
-                "$conffile" nginx-core nginx \
-                1.30.7-1ncb1~focal -- "$@" 2>/dev/null || true
-        done
         ;;
+
     upgrade)
         addnginxuser
-        # Migrate conffiles during upgrade from Ubuntu packages
-        for conffile in \
-            /etc/default/nginx \
-            /etc/default/nginx-debug \
-            /etc/init.d/nginx \
-            /etc/init.d/nginx-debug \
-            /etc/logrotate.d/nginx \
-            /etc/nginx/conf.d/default.conf \
-            /etc/nginx/fastcgi_params \
-            /etc/nginx/mime.types \
-            /etc/nginx/nginx.conf \
-            /etc/nginx/scgi_params \
-            /etc/nginx/uwsgi_params; do
-            dpkg-maintscript-helper conffile_migrate \
-                "$conffile" nginx-common nginx \
-                1.30.7-1ncb1~focal -- "$@" 2>/dev/null || true
-            dpkg-maintscript-helper conffile_migrate \
-                "$conffile" nginx-core nginx \
-                1.30.7-1ncb1~focal -- "$@" 2>/dev/null || true
-        done
+        backup_existing_conf
         ;;
 
     abort-upgrade)
